@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "AC Sync - Auto Push DSA Code to GitHub",
+  "description": "Solve. AC. Flex. Auto-push accepted solves to GitHub.",
+  "version": "1.0.1",
+
+  "permissions": ["storage", "activeTab", "notifications"],
+
+  "host_permissions": [
+    "https://leetcode.com/*",
+    "https://leetcode.com/problems/*/submissions/*",
+    "https://codeforces.com/*",
+    "https://www.geeksforgeeks.org/*",
+    "https://geeksforgeeks.org/*",
+    "https://practice.geeksforgeeks.org/*",
+    "https://api.github.com/*"
+  ],
+
+  "icons": {
+    "16": "assets/icon16.png",
+    "32": "assets/icon32.png",
+    "48": "assets/icon48.png",
+    "128": "assets/icon128.png"
+  },
+
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+
+  "action": {
+    "default_title": "AC Sync",
+    "default_icon": {
+      "16": "assets/icon16.png",
+      "32": "assets/icon32.png",
+      "48": "assets/icon48.png",
+      "128": "assets/icon128.png"
+    },
+    "default_popup": "popup/popup.html"
+  },
+
+  "options_page": "options/options.html",
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://leetcode.com/*",
+        "https://leetcode.com/problems/*/submissions/*",
+        "https://codeforces.com/*",
+        "https://www.geeksforgeeks.org/*",
+        "https://geeksforgeeks.org/*",
+        "https://practice.geeksforgeeks.org/*"
+      ],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

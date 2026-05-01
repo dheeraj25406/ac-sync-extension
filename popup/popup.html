@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AC Sync</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header class="header">
+        <div class="brand">
+          <img
+            src="../assets/ac-sync-logo.png"
+            alt="AC Sync logo"
+            class="brand-logo"
+          />
+          <div class="brand-text">
+            <h1>AC Sync</h1>
+            <p class="tagline">Solve. AC. Flex.</p>
+          </div>
+        </div>
+        <button id="openOptions" class="ghost">Settings</button>
+      </header>
+
+      <div id="statusLine" class="status-line">Ready to push</div>
+
+      <section class="section">
+        <h2>Platforms</h2>
+        <div class="platform-grid">
+          <label class="platform-pill">
+            <span class="platform-name">🧩 LeetCode</span>
+            <span class="switch">
+              <input id="toggleLC" type="checkbox" />
+              <span class="slider"></span>
+            </span>
+          </label>
+          <label class="platform-pill">
+            <span class="platform-name">⚔️ Codeforces</span>
+            <span class="switch">
+              <input id="toggleCF" type="checkbox" />
+              <span class="slider"></span>
+            </span>
+          </label>
+          <label class="platform-pill">
+            <span class="platform-name">🧠 GFG</span>
+            <span class="switch">
+              <input id="toggleGFG" type="checkbox" />
+              <span class="slider"></span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="section actions">
+        <label for="notesInput"
+          >Notes (optional, included in pushed file)</label
+        >
+        <input
+          id="notesInput"
+          type="text"
+          placeholder="Add approach, intuition, edge cases..."
+        />
+        <div class="button-group">
+          <button id="manualPush" class="primary">Push to GitHub!</button>
+          <button id="repairPush" class="ghost">Repair Last Push</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h3>Code Preview</h3>
+        <details id="previewPanel" class="preview-details">
+          <summary class="preview-summary">
+            <span class="preview-icon">👁️</span>
+            <span>Show code preview</span>
+            <span class="preview-status" id="previewStatus"></span>
+          </summary>
+          <div class="preview-container">
+            <pre id="previewCode" class="code-preview">
+(preview will appear here)</pre
+            >
+            <div class="preview-actions">
+              <button id="useCachedBtn" class="ghost small">
+                Use cached submission
+              </button>
+              <button id="copyCodeBtn" class="ghost small">📋 Copy code</button>
+            </div>
+          </div>
+        </details>
+      </section>
+
+      <section class="section">
+        <h2>📊 Analytics</h2>
+        <div class="stats">
+          <div class="stat-card">
+            <strong id="total">0</strong>
+            <span>Total Problems</span>
+          </div>
+          <div class="stat-card">
+            <strong id="week">0</strong>
+            <span>This Week</span>
+          </div>
+          <div class="stat-card">
+            <strong id="month">0</strong>
+            <span>This Month</span>
+          </div>
+        </div>
+        <div class="graph-container">
+          <h4>Activity (Last 14 Days)</h4>
+          <div id="graph" class="graph"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast"></div>
+    <script src="./popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeSync Settings</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>AC Sync - Settings</h1>
+      <p>
+        Configure single-repo sync, platform folders, commit style, and
+        reliability toggles.
+      </p>
+
+      <section>
+        <h2>GitHub</h2>
+        <label>GitHub Token</label>
+        <input id="token" type="password" />
+        <label>Default Repo (owner/name)</label>
+        <input id="repo" type="text" />
+        <label>Branch</label>
+        <input id="branch" type="text" value="main" />
+      </section>
+
+      <section>
+        <h2>Folder per Platform (Same Repo)</h2>
+        <label>LeetCode Folder</label>
+        <input id="folderLC" type="text" placeholder="LeetCode" />
+        <label>Codeforces Folder</label>
+        <input id="folderCF" type="text" placeholder="CodeForces" />
+        <label>GFG Folder</label>
+        <input id="folderGFG" type="text" placeholder="GeeksForGeeks" />
+        <small
+          >Each platform folder will contain Easy, Medium, and Hard
+          automatically.</small
+        >
+      </section>
+
+      <section>
+        <h2>Templates</h2>
+        <label>Commit Message Template</label>
+        <input id="commitTemplate" type="text" />
+        <small
+          >Variables: {platform} {problem} {language} {difficulty}
+          {status}</small
+        >
+      </section>
+
+      <section>
+        <h2>Reliability + Privacy</h2>
+        <label
+          ><input id="allowWip" type="checkbox" /> Push WIP/failed attempts
+          too</label
+        >
+        <label
+          ><input id="autoPushEnabled" type="checkbox" /> Auto-push Accepted
+          submissions to GitHub</label
+        >
+        <label><input id="darkMode" type="checkbox" /> Use dark mode</label>
+      </section>
+
+      <button id="save" class="primary">Save Settings</button>
+      <div id="status"></div>
+    </main>
+    <script src="./options.js"></script>
+  </body>
+</html>
