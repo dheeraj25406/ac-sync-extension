@@ -118,7 +118,18 @@ async function manualPush() {
 
     // Clear any cached data to force fresh collection
     await chrome.storage.local.remove(["lastDetectedSubmission"]);
-    console.debug("AC Sync: Cleared cached submission data");
+
+    // Read previously captured code from storage first
+    const cachedObj = await chrome.storage.local.get(["lastCapturedCode"]);
+    const cachedCode = cachedObj.lastCapturedCode || null;
+    if (cachedCode && cachedCode.code && cachedCode.code.length > 10) {
+      console.debug(
+        "AC Sync: Loaded code from storage, length:",
+        cachedCode.code.length,
+      );
+    } else {
+      console.debug("AC Sync: No cached code found in storage");
+    }
 
     // Try to collect from current page
     const liveRes = await sendTabMessageWithTimeout(
@@ -148,6 +159,7 @@ async function manualPush() {
     // BULLETPROOF: Always ensure we have some code
     const codeText = String(payload.code || "").trim();
     const storedCodeText = String(storedPayload?.code || "").trim();
+    const cachedCodeText = String(cachedCode?.code || "").trim();
 
     // Check if code is a placeholder
     const isPlaceholder = (text) => {
@@ -161,12 +173,15 @@ async function manualPush() {
 
     const codeLen = codeText.replace(/[ \t\r]+/g, "").length;
     const storedLen = storedCodeText.replace(/[ \t\r]+/g, "").length;
+    const cachedLen = cachedCodeText.replace(/[ \t\r]+/g, "").length;
 
     console.debug("AC Sync: Code validation:", {
       currentCodeLength: codeLen,
       storedCodeLength: storedLen,
+      cachedCodeLength: cachedLen,
       isCurrentPlaceholder: isPlaceholder(codeText),
       isStoredPlaceholder: isPlaceholder(storedCodeText),
+      isCachedPlaceholder: isPlaceholder(cachedCodeText),
     });
 
     // Always prioritize current page data if it has valid code
@@ -178,11 +193,14 @@ async function manualPush() {
         "AC Sync: Using stored data - current page has no valid code",
       );
       payload = { ...(storedPayload || {}) };
+    } else if (cachedLen > 10 && !isPlaceholder(cachedCodeText)) {
+      console.debug("AC Sync: Using cached code from storage");
+      payload = { ...(cachedCode || {}) };
     } else {
       // BULLETPROOF: Show error to user instead of pushing placeholder
       console.debug("AC Sync: No valid code found - showing error");
       showToast(
-        "Unable to capture code. Please ensure you're on a submission page with visible code, then try again.",
+        "Could not find code in DOM. Run window.ACSyncDebugCode() in page console and share logs.",
       );
       restorePushButton(pushBtn, originalText);
       return;

@@ -46,7 +46,7 @@
 
   // ===== MAIN COLLECTION FUNCTION =====
   async function collectAll(platform) {
-    const code = extractCode(platform);
+    const code = await extractCode(platform);
     const title = extractTitle(platform);
     const difficulty = extractDifficulty(platform);
     const stats = extractStats(platform);
@@ -61,7 +61,7 @@
       memory: stats.memory,
     });
 
-    return {
+    const result = {
       platform,
       problemTitle: title,
       difficulty,
@@ -74,15 +74,31 @@
       problemUrl: location.href,
       notes: "",
     };
+
+    // Store to local storage so popup can read it even if live message fails
+    if (result.code.length > 10) {
+      try {
+        await chrome.storage.local.set({ lastCapturedCode: result });
+        console.log(
+          "[AC Sync] Stored captured code to local storage, length:",
+          result.code.length,
+        );
+      } catch (e) {
+        console.warn("[AC Sync] Failed to store captured code:", e);
+      }
+    }
+
+    return result;
   }
 
   // ===== CODE EXTRACTION =====
-  function extractCode(platform) {
+  async function extractCode(platform) {
     console.log("[AC Sync] Extracting code for platform:", platform);
+    console.log("[AC Sync] Current URL:", location.href);
 
     // Completely independent extraction for each platform
     if (platform === "leetcode") {
-      return extractLeetCodeCode("");
+      return extractLeetCodeCodeWithRetry();
     }
     if (platform === "gfg") {
       return extractGfgCode("");
@@ -95,41 +111,107 @@
   }
 
   // ===== LEETCODE-SPECIFIC CODE EXTRACTION =====
+  async function extractLeetCodeCodeWithRetry() {
+    const MAX_ATTEMPTS = 12;
+    const DELAY_MS = 400;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const code = extractLeetCodeCode("");
+      if (code.length > 30) {
+        console.log(
+          "[AC Sync] LeetCode: Code captured on attempt",
+          attempt,
+          "length:",
+          code.length,
+        );
+        return code;
+      }
+      console.log(
+        "[AC Sync] LeetCode: Attempt",
+        attempt,
+        "code length:",
+        code.length,
+        "- retrying in",
+        DELAY_MS,
+        "ms",
+      );
+      await new Promise((r) => setTimeout(r, DELAY_MS));
+    }
+    console.warn("[AC Sync] LeetCode: All", MAX_ATTEMPTS, "attempts failed");
+    return "";
+  }
+
   function extractLeetCodeCode(currentBest) {
     let code = "";
-    console.log("[AC Sync] LeetCode: Starting LeetCode-specific extraction");
+    let foundVia = "";
+    console.log("[AC Sync] LeetCode: Extracting code from", location.pathname);
 
-    // 1. Monaco .view-line (primary LeetCode editor)
-    const monacoLines = Array.from(document.querySelectorAll(".view-line"))
-      .map((el) => el.textContent)
-      .filter(Boolean);
-    if (monacoLines.length > 3) {
-      const joined = monacoLines.join("\n");
-      if (joined.length > code.length) {
-        code = joined;
-        console.log(
-          "[AC Sync] LeetCode: Found code via .view-line, lines:",
-          monacoLines.length,
-        );
-      }
+    // Helper: extract text from a Monaco editor's view-lines, preserving line order
+    function getMonacoCode(container) {
+      if (!container) return "";
+      // Try .view-lines first (grouped by line)
+      const viewLines = container.querySelector(".view-lines");
+      const lineContainer = viewLines || container;
+      const lines = Array.from(lineContainer.querySelectorAll(".view-line"))
+        .map((el) => (el.textContent || "").replace(/\u00a0/g, " "))
+        .filter((l) => l.trim().length > 0);
+      if (lines.length > 3) return lines.join("\n");
+      return "";
     }
 
-    // 2. Monaco editor container
+    // 1. Target the CODE Monaco editor specifically
+    //    LeetCode new UI has multiple .monaco-editor instances.
+    //    The code editor is inside specific containers.
+    const codeEditorContainers = [
+      // New UI: code panel on submission page
+      "[class*='code'] .monaco-editor",
+      "[class*='Code'] .monaco-editor",
+      // Submission detail panel
+      "[class*='submission'] .monaco-editor",
+      "[class*='Submission'] .monaco-editor",
+      // Split panel editor
+      "[class*='split'] .monaco-editor .editor-container",
+      // Right panel (code is usually on the right)
+      ".flex:last-child .monaco-editor",
+      // Generic fallback
+      ".monaco-editor",
+    ];
+    for (const sel of codeEditorContainers) {
+      const editors = document.querySelectorAll(sel);
+      for (const editor of editors) {
+        const extracted = getMonacoCode(editor);
+        if (
+          extracted.length > 30 &&
+          extracted.length > code.length &&
+          looksLikeCode(extracted)
+        ) {
+          code = extracted;
+          foundVia = sel;
+          console.log(
+            "[AC Sync] LeetCode: Found code via",
+            sel,
+            "lines:",
+            extracted.split("\n").length,
+            "length:",
+            extracted.length,
+          );
+          break;
+        }
+      }
+      if (code.length > 30) break;
+    }
+
+    // 2. LeetCode data-e2e code block (submission pages)
     if (code.length < 50) {
-      const monacoEditor = document.querySelector(".monaco-editor");
-      if (monacoEditor) {
-        const lines = Array.from(monacoEditor.querySelectorAll(".view-line"))
-          .map((el) => el.textContent)
-          .filter(Boolean);
-        if (lines.length > 3) {
-          const joined = lines.join("\n");
-          if (joined.length > code.length) {
-            code = joined;
-            console.log(
-              "[AC Sync] LeetCode: Found code in .monaco-editor container, lines:",
-              lines.length,
-            );
-          }
+      const e2eCode = document.querySelector("[data-e2e-locator='code']");
+      if (e2eCode) {
+        const text = (e2eCode.textContent || "").trim();
+        if (text.length > 30 && looksLikeCode(text)) {
+          code = text;
+          foundVia = "[data-e2e-locator='code']";
+          console.log(
+            "[AC Sync] LeetCode: Found code via data-e2e-locator, length:",
+            text.length,
+          );
         }
       }
     }
@@ -143,6 +225,7 @@
         const joined = aceLines.join("\n");
         if (joined.length > code.length && looksLikeCode(joined)) {
           code = joined;
+          foundVia = ".ace_line";
           console.log(
             "[AC Sync] LeetCode: Found code via .ace_line, lines:",
             aceLines.length,
@@ -154,12 +237,14 @@
     // 4. LeetCode-specific selectors
     if (code.length < 50) {
       const lcSelectors = [
-        "[data-e2e-locator='code']",
         ".submission-code",
         ".code-view",
         ".ace_editor",
         ".code-editor",
         ".editor-area",
+        "[class*='CodeMirror']",
+        "[class*='editor-container']",
+        "[class*='code-block']",
       ];
       for (const sel of lcSelectors) {
         const els = document.querySelectorAll(sel);
@@ -178,6 +263,7 @@
             looksLikeCode(text)
           ) {
             code = text;
+            foundVia = sel;
             console.log(
               "[AC Sync] LeetCode: Found code via",
               sel,
@@ -198,6 +284,7 @@
         const val = ta.value || "";
         if (val.length > 30 && val.length > code.length && looksLikeCode(val)) {
           code = val;
+          foundVia = "textarea";
           console.log(
             "[AC Sync] LeetCode: Found code in textarea, length:",
             val.length,
@@ -207,9 +294,9 @@
       }
     }
 
-    // 6. Pre/code blocks (submission pages)
+    // 6. Pre/code blocks (submission pages) — prefer pre code over standalone pre/code
     if (code.length < 50) {
-      const preCodeBlocks = document.querySelectorAll("pre, code");
+      const preCodeBlocks = document.querySelectorAll("pre code, pre, code");
       for (const block of preCodeBlocks) {
         const text = block.textContent || "";
         if (
@@ -218,6 +305,11 @@
           looksLikeCode(text)
         ) {
           code = text;
+          foundVia =
+            block.tagName +
+            (block.parentElement?.tagName
+              ? " > " + block.parentElement.tagName
+              : "");
           console.log(
             "[AC Sync] LeetCode: Found code in pre/code block, length:",
             text.length,
@@ -227,7 +319,40 @@
       }
     }
 
-    // 7. Body pattern fallback
+    // 7. Submission panel code
+    if (code.length < 30) {
+      const panelSelectors = [
+        "[class*='submission'] pre",
+        "[class*='submission'] code",
+        "[class*='detail'] pre",
+        "[class*='detail'] code",
+        "[class*='answer'] pre",
+        "[class*='answer'] code",
+      ];
+      for (const sel of panelSelectors) {
+        const el = document.querySelector(sel);
+        if (el) {
+          const text = el.textContent || "";
+          if (
+            text.length > 30 &&
+            text.length > code.length &&
+            looksLikeCode(text)
+          ) {
+            code = text;
+            foundVia = sel;
+            console.log(
+              "[AC Sync] LeetCode: Found code via submission panel",
+              sel,
+              "length:",
+              text.length,
+            );
+            break;
+          }
+        }
+      }
+    }
+
+    // 8. Body pattern fallback
     if (code.length < 30) {
       const bodyText = document.body?.innerText || "";
       const patterns = [
@@ -240,6 +365,7 @@
         const m = bodyText.match(pat);
         if (m && m[0].length > 50) {
           code = m[0];
+          foundVia = "body-pattern";
           console.log(
             "[AC Sync] LeetCode: Found code via body pattern, length:",
             m[0].length,
@@ -249,7 +375,18 @@
       }
     }
 
-    console.log("[AC Sync] LeetCode: Final code length:", code.length);
+    if (code.length > 0) {
+      console.log(
+        "[AC Sync] LeetCode: Extraction complete via",
+        foundVia,
+        "code length:",
+        code.length,
+      );
+    } else {
+      console.warn(
+        "[AC Sync] LeetCode: No code found. Run window.ACSyncDebugCode() for diagnostics.",
+      );
+    }
     return code;
   }
 
@@ -1566,4 +1703,52 @@
 
   // ===== DEBUG HELPER =====
   window.ACSyncTest = () => collectAll(platform);
+
+  window.ACSyncDebugCode = () => {
+    console.log("=== AC Sync Code Diagnostics ===");
+    console.log("URL:", location.href);
+    console.log(
+      "body.innerText length:",
+      document.body?.innerText?.length || 0,
+    );
+
+    const selectors = [
+      "pre",
+      "code",
+      "pre code",
+      "textarea",
+      "[class*='monaco']",
+      "[class*='view-line']",
+      "[class*='view-lines']",
+      "[class*='CodeMirror']",
+      "[class*='submission']",
+      "[class*='code']",
+      ".monaco-editor",
+      ".ace_line",
+      "[data-e2e-locator='code']",
+    ];
+
+    for (const sel of selectors) {
+      const els = document.querySelectorAll(sel);
+      console.log(`[${sel}] count: ${els.length}`);
+      const limit = Math.min(els.length, 3);
+      for (let i = 0; i < limit; i++) {
+        const text = els[i].textContent || "";
+        const preview = text.substring(0, 120).replace(/\n/g, "\\n");
+        console.log(`  [${i}] textLen=${text.length} preview="${preview}"`);
+      }
+    }
+
+    // Also run the actual extractor
+    console.log("--- Running extractLeetCodeCode ---");
+    const result = extractLeetCodeCode("");
+    console.log(
+      "Result length:",
+      result.length,
+      "first 200 chars:",
+      result.substring(0, 200),
+    );
+    console.log("=== End Diagnostics ===");
+    return result;
+  };
 })();

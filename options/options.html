@@ -16,8 +16,29 @@
 
       <section>
         <h2>GitHub</h2>
-        <label>GitHub Token</label>
-        <input id="token" type="password" />
+        <div
+          id="authStatus"
+          style="margin-bottom: 10px; font-size: 14px; color: #94a3b8"
+        >
+          Not connected
+        </div>
+        <button id="loginGithub" class="primary" style="margin-bottom: 10px">
+          Login with GitHub
+        </button>
+        <button
+          id="logoutGithub"
+          class="primary"
+          style="margin-bottom: 10px; display: none"
+        >
+          Logout
+        </button>
+        <details style="margin-bottom: 10px">
+          <summary style="color: #94a3b8; cursor: pointer">
+            Advanced: manual token
+          </summary>
+          <label>GitHub Token</label>
+          <input id="token" type="password" />
+        </details>
         <label>Default Repo (owner/name)</label>
         <input id="repo" type="text" />
         <label>Branch</label>

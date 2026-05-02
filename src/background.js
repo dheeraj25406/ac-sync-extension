@@ -22,6 +22,25 @@ const PLATFORM_NAMES = {
   gfg: "GeeksForGeeks",
 };
 
+// GitHub OAuth config
+const GITHUB_CLIENT_ID = "Ov23liHRFaZM7SpEgj77";
+const GITHUB_OAUTH_EXCHANGE_URL =
+  "https://ac-sync-oauth.acsync.workers.dev/exchange";
+
+async function exchangeGitHubCode(code) {
+  const res = await fetch(GITHUB_OAUTH_EXCHANGE_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await res.json();
+  if (data.access_token) {
+    await chrome.storage.sync.set({ githubToken: data.access_token });
+    return { ok: true };
+  }
+  return { ok: false, error: data.error || "exchange_failed" };
+}
+
 // INIT
 chrome.runtime.onInstalled.addListener(async () => {
   const stored = await chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS));
@@ -89,6 +108,53 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })();
     return true; // 🔥 REQUIRED
+  }
+
+  if (message.type === "GITHUB_OAUTH_LOGIN") {
+    (async () => {
+      try {
+        const redirectUrl = chrome.identity.getRedirectURL("github");
+        const authUrl =
+          `https://github.com/login/oauth/authorize` +
+          `?client_id=${encodeURIComponent(GITHUB_CLIENT_ID)}` +
+          `&scope=repo` +
+          `&redirect_uri=${encodeURIComponent(redirectUrl)}` +
+          `&response_type=code` +
+          `&allow_signup=true`;
+
+        console.log("[AC Sync] OAuth redirectUrl:", redirectUrl);
+        console.log("[AC Sync] OAuth authUrl:", authUrl);
+
+        const responseUrl = await chrome.identity.launchWebAuthFlow({
+          url: authUrl,
+          interactive: true,
+        });
+
+        console.log("[AC Sync] OAuth responseUrl:", responseUrl);
+
+        if (!responseUrl) {
+          sendResponse({ ok: false, error: "no_redirect_url" });
+          return;
+        }
+
+        const url = new URL(responseUrl);
+        const code = url.searchParams.get("code");
+        console.log("[AC Sync] OAuth code:", code);
+
+        if (!code) {
+          sendResponse({ ok: false, error: "no_code" });
+          return;
+        }
+
+        const result = await exchangeGitHubCode(code);
+        console.log("[AC Sync] OAuth exchange result:", result);
+        sendResponse(result);
+      } catch (err) {
+        console.error("[AC Sync] GitHub OAuth failed:", err);
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
   }
 
   if (message.type === "AUTO_PUSH_ACCEPTED") {

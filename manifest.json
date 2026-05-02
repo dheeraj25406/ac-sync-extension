@@ -4,7 +4,12 @@
   "description": "Solve. AC. Flex. Auto-push accepted solves to GitHub.",
   "version": "1.0.1",
 
-  "permissions": ["storage", "activeTab", "notifications"],
+  "permissions": ["storage", "activeTab", "notifications", "identity"],
+
+  "oauth2": {
+    "client_id": "Ov23IiQFD23SoGqITTfFN",
+    "scopes": ["repo"]
+  },
 
   "host_permissions": [
     "https://leetcode.com/*",
@@ -13,7 +18,8 @@
     "https://www.geeksforgeeks.org/*",
     "https://geeksforgeeks.org/*",
     "https://practice.geeksforgeeks.org/*",
-    "https://api.github.com/*"
+    "https://api.github.com/*",
+    "https://ac-sync-oauth.acsync.workers.dev/*"
   ],
 
   "icons": {
