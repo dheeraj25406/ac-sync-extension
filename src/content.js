@@ -1469,10 +1469,14 @@
     if (platform === "codeforces") {
       // Codeforces: /contest/<id>/problem/<code> or /problemset/problem/<id>/<code>
       // Also /contest/<id>/submission/<id> (submission result page)
+      // Also /problemset/status and /contest/<id>/status (status pages)
       // Exclude profile pages like /profile/<user>
-      return /\/(contest\/\d+\/problem|contest\/\d+\/submission|problemset\/problem|gym\/\d+\/problem)\//.test(
-        path,
-      );
+      const isProblem =
+        /\/(contest\/\d+\/problem|contest\/\d+\/submission|problemset\/problem|gym\/\d+\/problem)\//.test(
+          path,
+        );
+      const isStatus = /\/(problemset\/status|contest\/\d+\/status)/.test(path);
+      return isProblem || isStatus;
     }
     if (platform === "gfg") {
       // GFG: /problems/<slug> or /practice/problems/<slug>
@@ -1560,6 +1564,13 @@
   function watchForAcceptedVerdict() {
     if (!isProblemPage()) {
       console.log("[AC Sync] Not a problem page, skipping verdict watcher");
+      return;
+    }
+    // CF status pages have their own dedicated watcher
+    if (platform === "codeforces" && isCFStatusPage()) {
+      console.log(
+        "[AC Sync] CF status page — skipping general verdict watcher",
+      );
       return;
     }
 
@@ -1698,8 +1709,275 @@
     console.log("[AC Sync] Verdict watcher active on:", location.pathname);
   }
 
+  // ===== CODEFORCES STATUS PAGE WATCHER =====
+  function isCFStatusPage() {
+    return /\/(problemset\/status|contest\/\d+\/status)/.test(
+      location.pathname,
+    );
+  }
+
+  async function watchForCFStatusAccepted() {
+    console.log("[AC Sync] CF status watcher active on:", location.pathname);
+
+    let pushed = false;
+    const watcherStartTime = Date.now();
+
+    // Dedup guard: check last pushed submission ID
+    const stored = await chrome.storage.local.get([
+      "lastAutoPushedCFSubmissionId",
+    ]);
+    let lastPushedId = stored.lastAutoPushedCFSubmissionId || "";
+
+    // Helper: extract submission ID as the LAST numeric segment from a submission href
+    // e.g. /problemset/submission/2225/374016729 -> 374016729
+    // e.g. /contest/2225/submission/374016729 -> 374016729
+    function parseSubmissionId(href) {
+      const parts = href.split("/").filter(Boolean);
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (/^\d{6,}$/.test(parts[i])) return parts[i];
+      }
+      return "";
+    }
+
+    // Snapshot baseline: all accepted submission IDs already on the page at startup
+    const baselineIds = new Set();
+    function snapshotBaseline() {
+      const existingCells = document.querySelectorAll(
+        "td.verdict-accepted, span.verdict-accepted, .verdict_accepted",
+      );
+      for (const cell of existingCells) {
+        const row = cell.closest("tr");
+        if (!row) continue;
+        const link = row.querySelector('a[href*="/submission/"]');
+        if (!link) continue;
+        const href = link.getAttribute("href") || "";
+        const sid = parseSubmissionId(href);
+        if (sid) baselineIds.add(sid);
+      }
+      console.log(
+        "[AC Sync] CF baseline accepted ids:",
+        baselineIds.size,
+        Array.from(baselineIds).slice(0, 5).join(","),
+      );
+    }
+    snapshotBaseline();
+
+    // Helper: extract submission ID from an accepted row
+    function getSubmissionIdFromRow(row) {
+      const link = row.querySelector('a[href*="/submission/"]');
+      if (!link) return "";
+      const href = link.getAttribute("href") || "";
+      const sid = parseSubmissionId(href);
+      console.log(
+        "[AC Sync] CF raw submission href:",
+        href,
+        "parsed submission id:",
+        sid,
+      );
+      return sid;
+    }
+
+    const observer = new MutationObserver(async () => {
+      if (pushed) return;
+
+      // Find accepted rows in the status table
+      const acceptedCells = document.querySelectorAll(
+        "td.verdict-accepted, span.verdict-accepted, .verdict_accepted",
+      );
+      if (!acceptedCells.length) return;
+
+      // Collect NEW accepted rows (not in baseline, not already pushed)
+      const newRows = [];
+      for (const cell of acceptedCells) {
+        const row = cell.closest("tr");
+        if (!row) continue;
+        const submissionId = getSubmissionIdFromRow(row);
+        if (!submissionId) continue;
+
+        // Skip baseline rows (already on page when watcher started)
+        if (baselineIds.has(submissionId)) {
+          console.log(
+            "[AC Sync] CF skipping baseline submission id:",
+            submissionId,
+          );
+          continue;
+        }
+
+        // Skip already-pushed submission
+        if (submissionId === lastPushedId) {
+          console.log(
+            "[AC Sync] CF skipping already-pushed submission",
+            submissionId,
+          );
+          continue;
+        }
+
+        newRows.push({ row, submissionId });
+      }
+
+      if (!newRows.length) return;
+
+      // Only push the FIRST (topmost) new accepted row
+      const { row, submissionId } = newRows[0];
+      console.log(
+        "[AC Sync] CF new accepted submission detected:",
+        submissionId,
+      );
+
+      // Extract problem info from the row
+      // CF status rows have a dedicated problem anchor:
+      //   /problemset/problem/<contest>/<code> or /contest/<id>/problem/<code>
+      // The anchor text is like "1859A - United We Stand"
+      const problemLink = row.querySelector(
+        'a[href*="/problemset/problem/"], a[href*="/contest/"][href*="/problem/"]',
+      );
+      let problemTitle = "";
+      let problemUrl = "";
+      if (problemLink) {
+        problemUrl = problemLink.getAttribute("href") || "";
+        // Strip contest prefix like "1859A - " from "1859A - United We Stand"
+        const rawTitle = problemLink.textContent.trim();
+        const dashIdx = rawTitle.indexOf(" - ");
+        problemTitle =
+          dashIdx >= 0 ? rawTitle.substring(dashIdx + 3).trim() : rawTitle;
+        console.log(
+          "[AC Sync] CF: Problem link found, raw:",
+          rawTitle,
+          "cleaned:",
+          problemTitle,
+          "url:",
+          problemUrl,
+        );
+      } else {
+        console.warn("[AC Sync] CF: No problem link found in accepted row");
+      }
+
+      // Extract language from the row
+      const langCell = row.querySelector("td:not(:first-child)");
+      const language = langCell
+        ? detectLanguage(langCell.textContent || "")
+        : "C++";
+
+      // Extract runtime and memory from the row
+      const allTds = Array.from(row.querySelectorAll("td"));
+      let runtime = "N/A";
+      let memory = "N/A";
+      for (let i = 0; i < allTds.length; i++) {
+        const tdText = allTds[i].textContent.trim();
+        if (/^\d+\s*ms$/.test(tdText)) runtime = tdText;
+        if (/^\d+\s*KB$/i.test(tdText) || /^\d+\s*kB$/i.test(tdText))
+          memory = tdText;
+      }
+
+      // Fetch the submission detail page to get the actual code
+      console.log("[AC Sync] CF: Fetching submission detail for", submissionId);
+      pushed = true; // Prevent duplicate triggers
+      observer.disconnect();
+
+      try {
+        const submissionLink = row.querySelector('a[href*="/submission/"]');
+        const submissionHref = submissionLink.getAttribute("href") || "";
+        const detailUrl = new URL(submissionHref, location.origin).href;
+        const resp = await fetch(detailUrl);
+        const html = await resp.text();
+
+        // Parse the HTML to extract code
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, "text/html");
+
+        let code = "";
+        const codeSelectors = [
+          "#program-source-text",
+          ".program-source",
+          ".submission-source",
+          "#program-source",
+          "pre",
+        ];
+        for (const sel of codeSelectors) {
+          const el = doc.querySelector(sel);
+          if (el) {
+            const text = el.textContent || "";
+            if (text.length > 30 && text.length > code.length) {
+              code = text;
+              console.log(
+                "[AC Sync] CF: Found code via",
+                sel,
+                "in fetched page, length:",
+                text.length,
+              );
+              break;
+            }
+          }
+        }
+
+        if (!code || code.length < 10) {
+          console.warn("[AC Sync] CF: No code found in submission detail page");
+          pushed = false; // Allow retry
+          return;
+        }
+
+        // Build payload
+        const payload = {
+          platform: "codeforces",
+          problemTitle: problemTitle || "Unknown Problem",
+          difficulty: "Unknown",
+          tags: [],
+          language: language,
+          code: code.trim(),
+          accepted: true,
+          submissionId: submissionId,
+          stats: { runtime, memory },
+          problemUrl: problemUrl
+            ? new URL(problemUrl, location.origin).href
+            : detailUrl,
+          notes: "",
+        };
+
+        console.log(
+          "[AC Sync] CF auto-push sent, submission id:",
+          submissionId,
+          "code length:",
+          payload.code.length,
+        );
+
+        // Store dedup guard
+        await chrome.storage.local.set({
+          lastAutoPushedCFSubmissionId: submissionId,
+        });
+
+        chrome.runtime.sendMessage(
+          { type: "AUTO_PUSH_ACCEPTED", payload },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              console.debug(
+                "[AC Sync] CF auto-push message error:",
+                chrome.runtime.lastError.message,
+              );
+            } else {
+              console.log("[AC Sync] CF auto-push response:", res);
+            }
+          },
+        );
+      } catch (err) {
+        console.error("[AC Sync] CF status auto-push failed:", err);
+        pushed = false; // Allow retry on error
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+  }
+
   // Start watching
   watchForAcceptedVerdict();
+
+  // Codeforces status page watcher
+  if (platform === "codeforces" && isCFStatusPage()) {
+    watchForCFStatusAccepted();
+  }
 
   // ===== DEBUG HELPER =====
   window.ACSyncTest = () => collectAll(platform);
