@@ -1,4 +1,4 @@
-# CodeSync Classy (Chrome Extension)
+# AC Sync (Chrome Extension)
 
 Classy, privacy-first Chrome extension that auto-pushes coding submissions from:
 - LeetCode
